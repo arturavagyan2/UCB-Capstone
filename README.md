@@ -1,4 +1,4 @@
-# Santander Product Recommendation — Capstone (Final)
+# Santander Product Recommendation — Capstone
 
 ## Overview
 This capstone builds a **Top‑N product recommendation system** for Santander customers using the Kaggle **Santander Product Recommendation** dataset.  
