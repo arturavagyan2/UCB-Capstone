@@ -1,173 +1,116 @@
-# Capstone Project – Baseline Product Recommendation (Santander Data)
+# Santander Product Recommendation — Capstone (Final)
 
-## 1. Project Overview
+## Overview
+This capstone builds a **Top‑N product recommendation system** for Santander customers using the Kaggle **Santander Product Recommendation** dataset.  
+The business goal is to recommend products a customer is likely to **add next month** (cross‑sell targeting).
 
-This capstone explores how a **recommendation system** can suggest relevant banking products to customers based on their past behavior and profile information.  
+The submission includes:
+- **Recommenders (SURPRISE):** SVD (primary) + KNNBasic (comparison)
+- **Baselines:** popularity by additions / popularity by ownership
+- **Evaluation:** Precision@K, Recall@K, HitRate@K, Coverage using a strict hold‑out month
+- **Interpretability:** a separate supervised adoption model (LogReg) with **Permutation Feature Importance** for `credit_card`
 
-For this module, I focus on building and evaluating a **baseline predictive model** using the public **Santander Product Recommendation** dataset from Kaggle. The problem is framed as a **binary classification task**:  
-> _Given a customer’s characteristics and product history, how likely is it that they have (or should be offered) a specific banking product?_
+## Data
+- File: `train_ver2.csv` (Kaggle)
+- Expected path: `data/train_ver2.csv`
+- Snapshot approach: **last two months only**
+  - Train month = second‑to‑last snapshot
+  - Test month = last snapshot
+- Ground truth: **next‑month additions** (0→1 between train and test snapshot)
 
-The work in this module centers on **EDA, data cleaning, feature engineering, and a first baseline model**, which will later be extended with more advanced recommendation techniques (e.g., collaborative filtering, clustering).
+### Dataset profile (this run)
+Customers in both months: **695,232**  
+Average # products owned (train): **1.332** (median = 1; 75% ≤ 2; max = 14)  
+Average # products added next month: **0.0385**  
+% customers adding ≥1 product next month: **2.998%**  
+Total additions in hold‑out month: **26,773**
 
-The main analysis is contained in:  
-**`rec_sys.ipynb`**
+### Product prevalence (train month; top examples)
+- `current_account`: **60.6%**
+- `direct_debit`: **12.0%**
+- `particular_account`: **10.9%**
+- `e_account`: **8.0%**
+- `payroll_account`: **7.8%**
+- `credit_card`: **3.76%**
 
----
+> Interpretation: Portfolios are small and skewed toward a few common products (especially `current_account`). Next‑month additions are sparse, making this a difficult ranking problem.
 
-## 2. Research Question
+## Notebook
+- `Santander_Recommender.ipynb`
+  - Memory‑safe loading and optional sampling via `MAX_CUSTOMERS`
+  - Column renaming to readable English names
+  - EDA + visualizations (prevalence, portfolio size distribution, additions distribution)
+  - Baselines and SURPRISE recommenders
+  - Negative sampling for implicit feedback (ownership = 1, sampled unowned = 0)
+  - Ranking‑aligned tuning using **HitRate@K**
+  - Evaluation for:
+    - **All users** (population-level performance)
+    - **Users with ≥1 addition** (diagnostic ranking performance)
 
-**How can a recommendation system help suggest the most relevant banking products to customers based on their past behavior and preferences?**
+## Models included
+### Baselines
+1. **Popularity by additions**: recommend the products most frequently added (excluding already owned).
+2. **Popularity by ownership**: recommend the products most commonly owned (excluding already owned).
 
-In this module, the question is operationalized as:
+### Recommendation models (SURPRISE)
+1. **SVD** (matrix factorization) — primary recommender
+2. **KNNBasic** (item‑based collaborative filtering) — comparison recommender
 
-> _Can we predict whether a customer is likely to hold a specific product, using demographic and behavioral features from the Santander dataset, and does this perform better than a naive “recommend to everyone” baseline?_
+### Interpretability model (separate from recommender)
+- **Logistic Regression** with preprocessing (imputation + one‑hot encoding) and CV tuning
+- **Permutation Feature Importance** (F1-based) for `credit_card` next‑month adoption
 
----
+## Results summary (this run)
+### Baselines (Top‑7)
+**All users**
+- Popularity (by additions): Precision@7 = **0.0054**, Recall@7 = **0.0292**, HitRate@7 = **0.0292**, Coverage = **87.5% (21/24)**
+- Popularity (by ownership): Precision@7 = **0.0053**, Recall@7 = **0.0285**, HitRate@7 = **0.0286**, Coverage = **87.5% (21/24)**
 
-## 3. Data Description
+**Users with ≥1 addition (N = 20,843)**
+- Popularity (by additions): Precision@7 = **0.1791**, Recall@7 = **0.9727**, HitRate@7 = **0.9755**, Coverage = **87.5% (21/24)**
+- Popularity (by ownership): Precision@7 = **0.1757**, Recall@7 = **0.9509**, HitRate@7 = **0.9551**, Coverage = **87.5% (21/24)**
 
-**Dataset:** Santander Product Recommendation (Kaggle)  
-**Unit of analysis:** Customer-month record  
-**Target variable:** A binary flag indicating whether the customer holds a chosen product (I chose credit card).
+### SURPRISE recommenders (Top‑7; negative sampling)
+Final training interactions (implicit + negatives): **16,685,568** rows.
 
-### Key Features Used
+**All users**
+- **SVD:** Precision@7 = **0.0053**, Recall@7 = **0.0289**, HitRate@7 = **0.0290**, Coverage = **87.5% (21/24)**
+- **KNNBasic:** Precision@7 = **0.0011**, Recall@7 = **0.0063**, HitRate@7 = **0.0074**, Coverage = **62.5% (15/24)**
 
-- **Demographics**
-  - `age` – age of customer  
-  - `antiguedad` – seniority (months) with the bank  
-  - `renta` – estimated income  
-  - `segmento` – customer segment (e.g., individuals, VIP, university)  
-  - `indrel`, `ind_nuevo` – relationship indicators
+**Users with ≥1 addition (N = 20,843)**
+- **SVD:** Precision@7 = **0.1776**, Recall@7 = **0.9628**, HitRate@7 = **0.9660**, Coverage = **87.5% (21/24)**
+- **KNNBasic:** Precision@7 = **0.0356**, Recall@7 = **0.2086**, HitRate@7 = **0.2454**, Coverage = **62.5% (15/24)**
 
-- **Behavioral / Engineered**
-  - Existing product indicator variables (0/1)  
-  - `num_products` – engineered feature: total number of products currently held by the customer.
+> Interpretation: In this run, **SVD performs on par with the strongest popularity baseline** (and far above KNNBasic) at both population and conditional levels. This suggests the catalog/additions are heavily concentrated in a small set of popular products, and personalization beyond popularity is limited under a two‑month setup. Extending the time horizon and adding richer signals is the most promising path to improvement.
 
----
+### Interpretability (credit card adoption)
+- Positive rate (credit card additions): **~0.46%** (3,202 positives out of 695,232)
+- Best CV F1: **0.0417** (LogReg, `C=1.0`, `class_weight='balanced'`)
+- PR‑AUC (Average Precision, in-sample): **0.0424**
+- Confusion matrix (in-sample): `[[553343, 138687], [141, 3061]]`
+  - Class 1 recall ≈ **0.96**, precision ≈ **0.02**
 
-## 4. Data Cleaning & EDA
+**Permutation feature importance (Top drivers for `credit_card`)**
+1. `account_start_date` (largest importance)
+2. `relationship_type_desc_month`
+3. `age`
+4. `is_new_customer`
+5. `province_code`
 
-### Data Cleaning
+> Interpretation: Onboarding timing/tenure proxies and relationship attributes are the strongest predictors of credit card adoption. Because of extreme class imbalance, this model is configured to favor recall; a deployment would tune thresholds to improve precision for campaign targeting.
 
-In the notebook, I applied the following steps:
+## How to run
+1. This project uses the Kaggle dataset from the Santander competition:
+  - Kaggle data page: https://www.kaggle.com/competitions/santander-customer-transaction-prediction/data
+  Download `train_ver2.csv` from Kaggle and place it in:
+  - `data/train_ver2.csv`
 
-- **Subset & Sampling**
-  - Loaded the Kaggle training file and sampled a subset of rows for faster experimentation.
+2. Use Python 3.11 (recommended) and install:
+   - `numpy<2.0`, `scikit-surprise`, `pandas`, `scikit-learn`, `matplotlib`
+3. Run the notebook: `Capstone_Final_Santander_Recommender.ipynb`
 
-- **Missing Values**
-  - Converted clearly invalid values (e.g., `'NA'` strings) to `NaN`.  
-  - Imputed numerical columns (e.g., `age`, `antiguedad`, `renta`) using median values.  
-  - Imputed categorical columns (e.g., `segmento`) using the most frequent category.
-
-- **Type Fixes**
-  - Cast numeric columns to proper numeric types.  
-  - Standardized categorical fields as strings for encoding.
-
-- **Duplicates & Target Quality**
-  - Removed obvious duplicate records within the sample.  
-  - Ensured the target product column was strictly binary (0/1).
-
-### Exploratory Data Analysis (EDA)
-
-The EDA section includes:
-
-- **Univariate distributions**
-  - Histograms of `age`, `renta`, and `antiguedad` to understand typical customer profiles and spot outliers.
-- **Product ownership patterns**
-  - Distribution of the chosen target product (class balance).  
-  - Count of how many products each customer holds (`num_products`), to see if “multi-product” customers look different.
-- **Relationships**
-  - Boxplots and bar charts comparing product ownership by:
-    - Age groups  
-    - Income bands  
-    - Customer segments (`segmento`)
-- **Correlations**
-  - Correlation heatmap for numeric features to identify potentially redundant variables.
-
-These visualizations helped to:
-
-- Confirm **class imbalance** (many more customers without the product than with it).  
-- See that customers who own the product often have **higher income and seniority** and tend to hold **more products overall**.  
-- Understand which demographic groups might be good targets for recommendations.
-
----
-
-## 5. Modeling Approach
-
-### Problem Framing
-
-- **Type:** Binary classification  
-- **Goal:** Predict whether a customer has (or is a good candidate for) one specific product.  
-- **Baseline:** A naive **popularity model** that simply recommends the product to every customer.
-
-### Features & Preprocessing
-
-I used a `sklearn` pipeline with:
-
-- **Numerical features**
-  - `age`, `antiguedad`, `renta`, `num_products`
-- **Categorical features**
-  - `segmento`, `indrel`, `ind_nuevo`
-
-Preprocessing steps:
-
-- `SimpleImputer` (median) for numericals  
-- `SimpleImputer` (most frequent) + `OneHotEncoder` for categoricals  
-- `LogisticRegression` as the baseline ML model
-
-Train/test split (e.g., 80/20) was used to evaluate generalization performance.
-
-### Evaluation Metrics
-
-To keep the model aligned with recommendation quality, I used:
-
-- **Precision** – Of the customers we recommend the product to, how many actually have it?
-- **Recall** – Of all customers who truly have the product, how many did we flag?
-- **F1 Score** – Harmonic mean of precision and recall; balances the two.
-
----
-
-## 6. Results
-
-### Popularity Baseline (recommend to everyone)
-
-This baseline assumes “the product is popular, so offer it to all customers”:
-
-- **Precision:** 0.063  
-- **Recall:** 1.000  
-- **F1 score:** 0.118  
-
-Interpretation:
-
-- The baseline **never misses** a true positive (recall = 1), but it does so by recommending the product to **all customers**, resulting in extremely low precision and poor overall F1.
-
-### Logistic Regression Model
-
-The logistic regression model with demographic, segment, and `num_products` features performed significantly better:
-
-- **Logistic Regression F1:** 0.478  
-- **Baseline F1:** 0.118  
-
-Interpretation:
-
-- The logistic regression model achieves roughly a **4× improvement in F1** compared to the naive baseline.
-- It is **far more selective** (higher precision) while still capturing a meaningful portion of true positives.
-- In practical terms, this means the bank can **target fewer customers** with **more relevant recommendations**, reducing spam while increasing relevance.
-
-### Short Conclusion for This Module
-
-> Predicting product ownership from customer features already provides a useful signal. Even a simple logistic regression model clearly outperforms a naive “recommend to everyone” strategy. This establishes a strong baseline for the capstone project and shows that customer demographics, segment information, and total number of products are important drivers of product adoption.
-
----
-
-## 7. Repository / File Structure
-
-Example structure (you can adjust to match your repo):
-
-```text
-.
-├── README.md                          
-├── data/
-│   └── train_ver2.csv                 # Santander dataset (not committed because very large)
-└── notebooks/
-    └── rec_sys.ipynb
+## Next steps
+- Use more months and temporal features to improve personalization beyond last-month ownership.
+- Add eligibility rules and contact policy constraints for deployable recommendations.
+- Validate impact with an online A/B test (conversion uplift, incremental revenue).
+- Explore implicit-ranking objectives (pairwise ranking/BPR) and additional models (SVDpp/NMF).
